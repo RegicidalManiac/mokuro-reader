@@ -11,6 +11,10 @@
     onClose: () => void;
     /** Enter OCR edit mode on this box (paged reader only — omitted elsewhere). */
     onEditText?: () => void;
+    /** The existing note for this text box, if any. */
+    existingNote?: string;
+    /** Called with the note text when the menu closes. */
+    onNoteClose?: (note: string) => void;
   }
 
   let {
@@ -23,8 +27,18 @@
     onCopyRaw,
     onAddToAnki,
     onClose,
-    onEditText
+    onEditText,
+    existingNote,
+    onNoteClose
   }: Props = $props();
+
+  // Note state — initialised from the existing saved note
+  let noteText = $state(existingNote ?? '');
+
+  function handleClose() {
+    onNoteClose?.(noteText);
+    onClose();
+  }
 
   // Snapshot selection at menu open time — don't reactively track changes.
   // Reactive tracking causes a race with Yomitan: clicking our menu dismisses
@@ -132,7 +146,8 @@
     const text = selection.replace(/[\n\r\t]/g, '');
     copyToClipboard(text);
     onCopy();
-    onClose();
+    // onClose();
+    handleClose();
   }
 
   function copySelectionRaw(e: Event) {
@@ -140,7 +155,8 @@
     e.stopPropagation();
     copyToClipboard(selection);
     onCopyRaw();
-    onClose();
+    // onClose();
+    handleClose();
   }
 
   function copyAll(e: Event) {
@@ -148,7 +164,8 @@
     e.stopPropagation();
     copyToClipboard(fullTextStripped);
     onCopy();
-    onClose();
+    // onClose();
+    handleClose();
   }
 
   function copyAllRaw(e: Event) {
@@ -157,35 +174,40 @@
     const text = lines.join('\n');
     copyToClipboard(text);
     onCopyRaw();
-    onClose();
+    // onClose();
+    handleClose();
   }
 
   function handleAddToAnki(e: Event) {
     e.preventDefault();
     e.stopPropagation();
     onAddToAnki(selection);
-    onClose();
+    // onClose();
+    handleClose();
   }
 
   function handleEditText(e: Event) {
     e.preventDefault();
     e.stopPropagation();
     onEditText?.();
-    onClose();
+    // onClose();
+    handleClose();
   }
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
-      onClose();
+      // onClose();
+      handleClose();
     }
   }
 </script>
 
-<svelte:window onclick={onClose} onkeydown={handleKeydown} />
+<svelte:window onclick={handleClose} onkeydown={handleKeydown} />
 
 <div
   bind:this={menuElement}
   class="context-menu"
+  class:has-note={existingNote}
   style:left="{adjustedX}px"
   style:top="{adjustedY}px"
   onclick={(e) => e.stopPropagation()}
@@ -254,6 +276,20 @@
       <span>Add to Anki</span>
     </button>
   {/if}
+  {#if onNoteClose}
+    <div class="divider"></div>
+    <div class="note-section">
+      <textarea
+        class="note-input"
+        placeholder="Add a note..."
+        bind:value={noteText}
+        onpointerdown={(e) => e.stopPropagation()}
+        onclick={(e) => e.stopPropagation()}
+        onkeydown={(e) => e.stopPropagation()}
+        rows="3"
+      ></textarea>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -270,6 +306,11 @@
     padding: 0.25rem 0;
     font-size: 0.875rem;
     touch-action: manipulation;
+  }
+
+  /* set a wider maximum menu width if there is a note */
+  .context-menu.has-note {
+    min-width: 420px;
   }
 
   :global(.dark) .context-menu {
@@ -316,5 +357,31 @@
 
   :global(.dark) .divider {
     background-color: var(--color-gray-700);
+  }
+
+  .note-section {
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .note-input {
+    width: 100%;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    resize: both;
+    font-family: inherit;
+    background: white;
+    color: inherit;
+    box-sizing: border-box;
+  }
+
+  :global(.dark) .note-input {
+    background-color: var(--color-gray-700);
+    border-color: var(--color-gray-600);
+    color: var(--color-gray-100);
   }
 </style>

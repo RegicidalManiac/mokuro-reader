@@ -28,6 +28,7 @@ import {
 } from '$lib/util/series-extraction';
 import { generateUUID } from '$lib/util/uuid';
 import { naturalSort } from '$lib/util/natural-sort';
+import { db } from '$lib/catalog/db';
 
 // ============================================
 // TYPES
@@ -171,6 +172,26 @@ export async function parseMokuroFile(file: File): Promise<ParsedMokuro> {
 
   if (missingFields.length > 0) {
     throw new Error(`Invalid mokuro file: missing required fields: ${missingFields.join(', ')}`);
+  }
+
+  // Read any user notes embedded in the .mokuro file and save them to the database
+  const volumeUuid = obj.volume_uuid as string;
+  const pages = obj.pages as MokuroPage[];
+
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+    const page = pages[pageIndex];
+    if (!page.blocks) continue; // skip pages with no text blocks
+
+    for (let blockIndex = 0; blockIndex < page.blocks.length; blockIndex++) {
+      const block = page.blocks[blockIndex];
+
+      if (typeof block.user_note === 'string' && block.user_note.trim() !== '') {
+        const key = `${volumeUuid}::${pageIndex}::${blockIndex}`;
+        await db
+          .table('user_notes')
+          .put({ note: block.user_note, updatedAt: new Date().toISOString() }, key);
+      }
+    }
   }
 
   return {

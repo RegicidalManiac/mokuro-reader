@@ -66,6 +66,11 @@ async function moveLayerPagesToOwnTable(tx: Transaction): Promise<void> {
   }
 }
 
+export interface UserNote {
+  note: string;
+  updatedAt: string;
+}
+
 export const MOKURO_DB_SCHEMA: readonly MokuroSchemaVersion[] = [
   // v1: the shipped schema — three tables, thumbnails inlined in volumes.
   // This is the only version any released build has written, so it must stay
@@ -168,6 +173,24 @@ export const MOKURO_DB_SCHEMA: readonly MokuroSchemaVersion[] = [
       cloud_covers: '[account_scope+path], cached_at',
       volume_ocr_layers: '[volume_uuid+layer_id], volume_uuid',
       volume_ocr_layer_pages: '[volume_uuid+layer_id], volume_uuid'
+    },
+    upgrade: moveLayerPagesToOwnTable
+  },
+  // v5: an editable "user_notes" section allows the user to add their
+  // own notes to each text block which is saved back to their mokuro file.
+  {
+    version: 5,
+    stores: {
+      volumes: 'volume_uuid, series_uuid, series_title, ocr_edited_at',
+      volume_ocr: 'volume_uuid',
+      volume_files: 'volume_uuid',
+      series_metadata: 'series_key, folded_key',
+      series_index: 'series_key',
+      catalog_index: 'id',
+      cloud_covers: '[account_scope+path], cached_at',
+      volume_ocr_layers: '[volume_uuid+layer_id], volume_uuid',
+      volume_ocr_layer_pages: '[volume_uuid+layer_id], volume_uuid',
+      user_notes: ''
     },
     upgrade: moveLayerPagesToOwnTable
   }

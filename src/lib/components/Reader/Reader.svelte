@@ -87,6 +87,7 @@
   import { calculateForwardTarget, calculateBackwardTarget } from '$lib/reader/page-nav';
   import { ImageCache } from '$lib/reader/image-cache';
   import '$lib/styles/page-transitions.css';
+  import type { UserNote } from '$lib/catalog/db-schema';
 
   // TODO: Refactor this whole mess
   interface Props {
@@ -1147,6 +1148,10 @@
   let showContextMenu = $state(false);
   let contextMenuData = $state<ContextMenuData | null>(null);
 
+  let currentNote = $state<string | undefined>(undefined);
+  // let volumeUuid = volume?.volume_uuid ?? '';
+  let volumeUuid = $derived(volume?.volume_uuid ?? '');
+
   // Extract image URL from an element by traversing up to find background-image
   function extractImageUrlFromElement(element: HTMLElement | null): string | null {
     if (!element) return null;
@@ -1162,7 +1167,7 @@
     return null;
   }
 
-  function handleTextBoxContextMenu(data: ContextMenuData) {
+  async function handleTextBoxContextMenu(data: ContextMenuData) {
     // Capture the image URL immediately while the DOM is in a known good state
     // This prevents issues when Yomitan or other extensions modify the DOM
     const imageUrl = extractImageUrlFromElement(data.imgElement) ?? undefined;
@@ -1178,7 +1183,33 @@
       imageUrl,
       pageIndex
     };
+
+    // Load any existing note for this text box
+    if (data.blockIndex !== undefined) {
+      const key = `${volumeUuid}::${pageIndex}::${data.blockIndex}`;
+      const saved = (await db.table('user_notes').get(key)) as UserNote | undefined;
+      currentNote = saved?.note;
+    } else {
+      currentNote = undefined;
+    }
+
     showContextMenu = true;
+  }
+
+  async function handleNoteClose(note: string) {
+    if (contextMenuData?.blockIndex === undefined) return;
+    if (contextMenuData?.pageIndex === undefined) return;
+
+    const key = `${volumeUuid}::${contextMenuData.pageIndex}::${contextMenuData.blockIndex}`;
+
+    if (note.trim() === '') {
+      // Empty note = delete it
+      await db.table('user_notes').delete(key);
+    } else {
+      await db
+        .table('user_notes')
+        .put({ note: note.trim(), updatedAt: new Date().toISOString() }, key);
+    }
   }
 
   function handleContextMenuEditText() {
@@ -1750,6 +1781,8 @@
       onEditText={!$settings.continuousScroll && contextMenuData.blockIndex !== undefined
         ? handleContextMenuEditText
         : undefined}
+      existingNote={currentNote}
+      onNoteClose={handleNoteClose}
     />
   {/if}
 {:else if volume === null}

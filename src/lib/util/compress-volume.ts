@@ -15,6 +15,8 @@ import { buildMokuroMetadata, type MokuroMetadata } from './mokuro-metadata';
 import { buildPageCharCounts } from '$lib/catalog/page-char-counts';
 import { layerSidecarName } from './sync/syncable-file';
 
+import { db } from '$lib/catalog/db';
+
 // Re-exported for existing importers (volume-sidecars, zip, tests).
 export type { MokuroMetadata } from './mokuro-metadata';
 
@@ -32,6 +34,27 @@ export interface VolumeLayerSidecarBlobData extends VolumeSidecarBlobData {
    * a fresh read (`stampLayersSynced`).
    */
   updatedAt: string;
+}
+
+async function stampUserNotes(pages: any[], volumeUuid: string): Promise<any[]> {
+  // Make a deep copy so we don't mutate the original data in the database
+  const stampedPages = JSON.parse(JSON.stringify(pages));
+
+  for (let pageIndex = 0; pageIndex < stampedPages.length; pageIndex++) {
+    const page = stampedPages[pageIndex];
+    if (!page.blocks) continue;
+
+    for (let blockIndex = 0; blockIndex < page.blocks.length; blockIndex++) {
+      const key = `${volumeUuid}::${pageIndex}::${blockIndex}`;
+      const userNote = await db.table('user_notes').get(key);
+
+      if (userNote) {
+        page.blocks[blockIndex].user_note = userNote.note;
+      }
+    }
+  }
+
+  return stampedPages;
 }
 
 export interface VolumeSidecarBlobResult {
@@ -220,7 +243,9 @@ export async function generateVolumeSidecarsFromDb(
   if (hasMokuroVersion) {
     const volumeOcr = await db.table('volume_ocr').get(volumeUuid);
     if (volumeOcr?.pages) {
-      const metadata = buildMokuroMetadata(volume, volumeOcr.pages, {
+      const stampedPages = await stampUserNotes(volumeOcr.pages, volume.volume_uuid);
+      // const metadata = buildMokuroMetadata(volume, volumeOcr.pages, {
+      const metadata = buildMokuroMetadata(volume, stampedPages, {
         seriesTitle,
         volumeTitle
       });
@@ -266,7 +291,7 @@ async function buildLayerSidecarsFromDb(
   // Metadata and pages in one read transaction: `updatedAt` below must be the
   // stamp of exactly the pages serialized (`stampLayersSynced` compares it).
   const layers = await listLayersWithPages(db, volume.volume_uuid);
-  return (
+  return Promise.all(
     layers
       // An untouched upgrade layer (`updated-ocr`: the cloud's own primary,
       // mirrored for an edited volume; `previous-ocr`: the local primary an
@@ -276,11 +301,13 @@ async function buildLayerSidecarsFromDb(
       // metadata (`layerStaysLocal`).
       .filter((layer) => !layerStaysLocal(layer, serverCompilesMetadata))
       .sort((a, b) => (a.layer_id < b.layer_id ? -1 : a.layer_id > b.layer_id ? 1 : 0))
-      .map((layer) => {
+      .map(async (layer) => {
         const { totalChars } = buildPageCharCounts(layer.pages);
+        const stampedPages = await stampUserNotes(layer.pages, volume.volume_uuid);
         const metadata = buildMokuroMetadata(
           { ...volume, character_count: totalChars },
-          layer.pages,
+          // layer.pages,
+          stampedPages,
           titles
         );
         return {
@@ -362,9 +389,15 @@ export async function compressVolumeFromDb(
 
   // Build mokuro metadata
   const isImageOnly = volume.mokuro_version === '';
-  const metadata: MokuroMetadata | null = isImageOnly
-    ? null
-    : buildMokuroMetadata(volume, volumeOcr?.pages || []);
+  //const metadata: MokuroMetadata | null = isImageOnly
+  //  ? null
+  //  : buildMokuroMetadata(volume, volumeOcr?.pages || []);
+
+  let metadata: MokuroMetadata | null = null;
+  if (!isImageOnly) {
+    const stampedPages = await stampUserNotes(volumeOcr?.pages || [], volumeUuid);
+    metadata = buildMokuroMetadata(volume, stampedPages);
+  }
 
   // Get list of files, excluding placeholders
   const filenames = Object.keys(volumeFiles.files);
