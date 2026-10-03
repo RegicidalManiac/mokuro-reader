@@ -15,6 +15,7 @@
     existingNote?: string;
     /** Called with the note text when the menu closes. */
     onNoteClose?: (note: string) => void;
+    onNoteChange?: (note: string) => void;
   }
 
   let {
@@ -29,7 +30,8 @@
     onClose,
     onEditText,
     existingNote,
-    onNoteClose
+    onNoteClose,
+    onNoteChange
   }: Props = $props();
 
   // Note state — initialised from the existing saved note
@@ -39,6 +41,10 @@
     onNoteClose?.(noteText);
     onClose();
   }
+
+  $effect(() => {
+    onNoteChange?.(noteText);
+  });
 
   // Snapshot selection at menu open time — don't reactively track changes.
   // Reactive tracking causes a race with Yomitan: clicking our menu dismisses

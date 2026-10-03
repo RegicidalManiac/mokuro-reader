@@ -1168,6 +1168,32 @@
   }
 
   async function handleTextBoxContextMenu(data: ContextMenuData) {
+    // If a menu is already open, save its note before switching boxes —
+    // but only if the user actually typed something (don't delete existing notes)
+    if (
+      showContextMenu &&
+      contextMenuData?.blockIndex !== undefined &&
+      contextMenuData?.pageIndex !== undefined
+    ) {
+      const previousKey = `${volumeUuid}::${contextMenuData.pageIndex}::${contextMenuData.blockIndex}`;
+      const previousSaved = (await db.table('user_notes').get(previousKey)) as UserNote | undefined;
+      const noteChanged = (currentNote ?? '') !== (previousSaved?.note ?? '');
+
+      if (noteChanged && currentNote !== undefined) {
+        if (currentNote.trim() === '') {
+          await db.table('user_notes').delete(previousKey);
+        } else {
+          await db
+            .table('user_notes')
+            .put({ note: currentNote.trim(), updatedAt: new Date().toISOString() }, previousKey);
+        }
+      }
+    }
+
+    // Temporarily hide the menu while we load the new box's data,
+    // so the close handler doesn't fire during the await below
+    showContextMenu = false;
+
     // Capture the image URL immediately while the DOM is in a known good state
     // This prevents issues when Yomitan or other extensions modify the DOM
     const imageUrl = extractImageUrlFromElement(data.imgElement) ?? undefined;
@@ -1783,6 +1809,9 @@
         : undefined}
       existingNote={currentNote}
       onNoteClose={handleNoteClose}
+      onNoteChange={(note) => {
+        currentNote = note;
+      }}
     />
   {/if}
 {:else if volume === null}
